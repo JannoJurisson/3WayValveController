@@ -6061,16 +6061,6 @@
 			(embedded_fonts no)
 		)
 	)
-	(text "end switches!!!\n"
-		(exclude_from_sim no)
-		(at 76.708 133.858 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "d67caae6-db58-46c2-a021-c69fe4a3079a")
-	)
 	(text "Debug port"
 		(exclude_from_sim no)
 		(at 222.25 45.72 0)
@@ -12076,7 +12066,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
+		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
 			(at 287.9852 81.28 0)
 			(effects
 				(font
@@ -16019,7 +16009,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
+		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
 			(at 305.7652 44.45 0)
 			(effects
 				(font
