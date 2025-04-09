@@ -157,6 +157,7 @@ void loop() {
       Serial.print(currentTemp);
       Serial.print(" °C | Servo: ");
       Serial.println(newServoPos);
+      
     }
   }
   
