@@ -106,6 +106,11 @@ void setup() {
       break;  // Min limit reached
     }
   }
+
+  valveServo.detach();
+  servoAttached = false;
+
+  
   Serial.print("Minimum servo angle = ");
   Serial.println(minServoAngle);
   Serial.print("Maximum servo angle = ");
