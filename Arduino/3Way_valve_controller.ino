@@ -23,7 +23,7 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 double setpoint, Kp, Ki, Kd, inputTemp, outputServo, setpointTemp;
-float currentTemp = 0.0;  // ✅ FIXED: Declared global variable
+float currentTemp = 0.0;  
 PID myPID(&inputTemp, &outputServo, &setpointTemp, Kp, Ki, Kd, DIRECT);
 LiquidCrystal_I2C lcd(0x27, 20, 2);
 
