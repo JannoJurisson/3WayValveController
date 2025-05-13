@@ -52,7 +52,7 @@ int LED_delay = 1000;
 
 void setup() {
 //  Serial.begin(9600);
-  while (!Serial)
+  //while (!Serial)
     ;  // <-- Add this line!
 
 pinMode(LED_BUILTIN, OUTPUT);
@@ -106,7 +106,17 @@ void loop() {
     prevMillis = millis();
   }
 
-   if (millis() - NRF24_connect_interval > 10000) {
+   if (millis() - NRF24_connect_interval > 30000) {
+
+  if (multi.run() != WL_CONNECTED) {
+    LED_delay = 300;
+  }
+  else{
+    LED_delay = 2000;
+  }
+
+      NRF24_connect_interval = millis();
+   }
   if (role) {
     // This device is a TX node
 
@@ -126,7 +136,7 @@ void loop() {
     }
 
     // to make this example readable in the serial monitor
-   
+   delay(1000); 
 
   } else {
     // This device is a RX node
@@ -148,11 +158,10 @@ void loop() {
       Serial.println(data.temp3);
     }
   }  // role
-  NRF24_connect_interval = millis();
-   }
+
 
   // Log Temperature to ThingSpeak every 30 min
-  if (millis() - lastThingSpeakUpdate >= 60000) { // 30 minutes600000
+  if (millis() - lastThingSpeakUpdate >= 600000) { // 30 minutes600000
 
     SendThingSpeak();
     lastThingSpeakUpdate = millis();
@@ -162,6 +171,12 @@ void loop() {
 
 
 void SendThingSpeak() {
+
+
+  if (multi.run() != WL_CONNECTED) {
+    multi.addAP(ssid, pass);
+    delay(5000);
+  }
   printWifiStatus();
   // close any connection before send a new request
   // this will free the socket on the WiFi shield
@@ -183,10 +198,10 @@ void SendThingSpeak() {
     client.println();
     // note the time that the connection was made
     lastConnectionTime = millis();
-    LED_delay = 2000;
+   
   } else {
     // if you couldn't make a connection
-    LED_delay = 300;
+   
     Serial.println("Connection failed");
   }
 }
