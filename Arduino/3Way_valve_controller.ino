@@ -9,6 +9,8 @@
 #include "printf.h"
 #include "RF24.h"
 
+#define TEMPERATURE_PRECISION 9
+
 #define CE_PIN 9
 #define CSN_PIN 10
 // RF24 configuration
@@ -46,7 +48,7 @@ DallasTemperature sensors(&oneWire);
 DeviceAddress soilThermometer, valveThermometer, airThermometer;
 
 double setpoint, Kp, Ki, Kd, inputTemp, outputServo, setpointTemp;
-float currentTemp = 0.0;  // ✅ FIXED: Declared global variable
+float currentTemp = 0.0; 
 PID myPID(&inputTemp, &outputServo, &setpointTemp, Kp, Ki, Kd, DIRECT);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -107,6 +109,12 @@ void setup() {
   printAddress(airThermometer);
   Serial.println();
 
+
+  sensors.setResolution(soilThermometer, TEMPERATURE_PRECISION);
+  sensors.setResolution(valveThermometer, TEMPERATURE_PRECISION);
+    sensors.setResolution(airThermometer, TEMPERATURE_PRECISION);
+
+
   pinMode(MIN_LIMIT_SWITCH, INPUT_PULLUP);
   pinMode(MAX_LIMIT_SWITCH, INPUT_PULLUP);
   pinMode(BTN_UP, INPUT_PULLUP);
@@ -128,7 +136,7 @@ void setup() {
   if (!radio.begin()) {
     Serial.println(F("radio hardware is not responding!!"));
   }
- radio.setPALevel(RF24_PA_LOW);  // RF24_PA_MAX is default.
+ radio.setPALevel(RF24_PA_MAX);  // RF24_PA_MAX is default.
   radio.setPayloadSize(sizeof(data));  // float datatype occupies 4 bytes
   radio.stopListening(address[radioNumber]);  // put radio in TX mode
   radio.openReadingPipe(1, address[!radioNumber]);  // using pipe 1
@@ -398,37 +406,41 @@ void showMainScreen() {
     lcd.clear();
     lcd.setCursor(0, 1);
     lcd.print("S: ");
-    lcd.print(setpoint, 1);
+    lcd.print(data.temp1, 1);
     lcd.print("C");
 
     lcd.setCursor(9, 1);
-    lcd.print("C: ");
+    lcd.print("V: ");
     lcd.print(currentTemp);
     lcd.print("C");
 
     lcd.setCursor(0, 0);
+    lcd.print("A: ");
+    lcd.print(data.temp3, 1);
+    lcd.print("C");
+
     unsigned long ms = millis();
     unsigned long totalSeconds = ms / 1000;
 
     unsigned int seconds = totalSeconds % 60;
-    unsigned int minutes = (totalSeconds / 60) % 60;
+    unsigned int minutes = (totalSeconds / 60) % 999999;
     unsigned int hours = (totalSeconds / 3600) % 24;
     unsigned int days = totalSeconds / 86400;
-    lcd.print("d");
-    lcd.setCursor(1, 0);
-    lcd.print(days);
-    lcd.setCursor(4, 0);
-    lcd.print("h:");
-    lcd.setCursor(6, 0);
-    lcd.print(hours);
-    lcd.setCursor(8, 0);
+   // lcd.print("d");
+   // lcd.setCursor(1, 0);
+   // lcd.print(days);
+    //lcd.setCursor(4, 0);
+   // lcd.print("h:");
+   // lcd.setCursor(6, 0);
+   // lcd.print(hours);
+    lcd.setCursor(9, 0);
     lcd.print("m:");
-    lcd.setCursor(10, 0);
+    lcd.setCursor(11, 0);
     lcd.print(minutes);
-    lcd.setCursor(12, 0);
-    lcd.print("s:");
-    lcd.setCursor(14, 0);
-    lcd.print(seconds);
+   // lcd.setCursor(12, 0);
+    //lcd.print("s:");
+    //lcd.setCursor(14, 0);
+    //lcd.print(seconds);
   }
 }
 
@@ -478,7 +490,7 @@ int loadLastServoPosition() {
 }
 
 
-// ✅ Prevents servo from exceeding 90° range using limit switches
+//  Prevents servo from exceeding 90° range using limit switches
 bool isWithinLimits(int position) {
   if (digitalRead(MIN_LIMIT_SWITCH) == HIGH && position <= minServoAngle) return false;
   if (digitalRead(MAX_LIMIT_SWITCH) == HIGH && position >= maxServoAngle) return false;
