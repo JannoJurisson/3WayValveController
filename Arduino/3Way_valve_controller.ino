@@ -5,27 +5,50 @@
 #include <EEPROM.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <SPI.h>
+#include "printf.h"
+#include "RF24.h"
+
+#define CE_PIN 9
+#define CSN_PIN 10
+// RF24 configuration
+RF24 radio(CE_PIN, CSN_PIN);
+uint8_t address[][6] = { "1Node", "2Node" };
+bool radioNumber = 0;  // 0 uses address[0] to transmit, 1 uses address[1] to transmit
+bool role = true;  // true = TX role, false = RX role
+float payload = 0.0;
+
+// Structure to send two temperatures
+struct TempData {
+  float temp1;
+  float temp2;
+  float temp3;
+};
+  TempData data;
+
+#define ONE_WIRE_BUS 7  // Dallas temp sensor data pin
+#define SERVO_PIN 3
+#define MIN_LIMIT_SWITCH 8  // Active LOW (0 when pressed)
+#define MAX_LIMIT_SWITCH 5
+#define LED_STATUS 6
 
 
-
-#define ONE_WIRE_BUS 8  // Dallas temp sensor data pin
-#define SERVO_PIN 9
-#define MIN_LIMIT_SWITCH 7  // Active LOW (0 when pressed)
-#define MAX_LIMIT_SWITCH 6
-
-#define BTN_UP 3
-#define BTN_DOWN 2
+#define BTN_UP A0
+#define BTN_DOWN A4
 #define BTN_LEFT 4
-#define BTN_RIGHT 5
+#define BTN_RIGHT A1
+#define BTN_OK A3
 
 Servo valveServo;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
+// arrays to hold device addresses
+DeviceAddress soilThermometer, valveThermometer, airThermometer;
 
 double setpoint, Kp, Ki, Kd, inputTemp, outputServo, setpointTemp;
-float currentTemp = 0.0;  
+float currentTemp = 0.0;  // ✅ FIXED: Declared global variable
 PID myPID(&inputTemp, &outputServo, &setpointTemp, Kp, Ki, Kd, DIRECT);
-LiquidCrystal_I2C lcd(0x27, 20, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 int menuIndex = 0;  // 0=Set Temp, 1=Kp, 2=Ki, 3=Kd
 const char* menuItems[] = { "Set Temp", "Kp Value", "Ki Value", "Kd Value" };
@@ -53,10 +76,36 @@ unsigned long lastServoUpdate = 0;
 const unsigned long servoUpdateInterval = 5000;  // 5 seconds
 bool servoAttached = false;
 
+
+unsigned long currentMillis;
+unsigned long prevMillis;
+int LED_delay = 1000;
+
 void setup() {
   Serial.begin(9600);
   Serial.println("start");
   sensors.begin();
+  // locate devices on the bus
+  Serial.print("Locating devices...");
+  Serial.print("Found ");
+  Serial.print(sensors.getDeviceCount(), DEC);
+  Serial.println(" devices.");
+
+  if (!sensors.getAddress(soilThermometer, 0)) Serial.println("Unable to find address for Device 0");
+  if (!sensors.getAddress(valveThermometer, 1)) Serial.println("Unable to find address for Device 1");
+  if (!sensors.getAddress(airThermometer, 2)) Serial.println("Unable to find address for Device 2");
+
+  Serial.print("Device 0 Address: ");
+  printAddress(soilThermometer);
+  Serial.println();
+
+  Serial.print("Device 1 Address: ");
+  printAddress(valveThermometer);
+  Serial.println();
+
+  Serial.print("Device 2 Address: ");
+  printAddress(airThermometer);
+  Serial.println();
 
   pinMode(MIN_LIMIT_SWITCH, INPUT_PULLUP);
   pinMode(MAX_LIMIT_SWITCH, INPUT_PULLUP);
@@ -64,6 +113,7 @@ void setup() {
   pinMode(BTN_DOWN, INPUT_PULLUP);
   pinMode(BTN_LEFT, INPUT_PULLUP);
   pinMode(BTN_RIGHT, INPUT_PULLUP);
+  pinMode(LED_STATUS, OUTPUT);
 
   EEPROM.get(0, setpoint);
   EEPROM.get(4, Kp);
@@ -75,6 +125,16 @@ void setup() {
   if (isnan(Ki)) Ki = 0.5;
   if (isnan(Kd)) Kd = 1.0;
 
+  if (!radio.begin()) {
+    Serial.println(F("radio hardware is not responding!!"));
+  }
+ radio.setPALevel(RF24_PA_LOW);  // RF24_PA_MAX is default.
+  radio.setPayloadSize(sizeof(data));  // float datatype occupies 4 bytes
+  radio.stopListening(address[radioNumber]);  // put radio in TX mode
+  radio.openReadingPipe(1, address[!radioNumber]);  // using pipe 1
+  if (!role) {
+    radio.startListening();  // put radio in RX mode
+  }
 
 
   valveServo.attach(SERVO_PIN);
@@ -110,7 +170,6 @@ void setup() {
   valveServo.detach();
   servoAttached = false;
 
-  
   Serial.print("Minimum servo angle = ");
   Serial.println(minServoAngle);
   Serial.print("Maximum servo angle = ");
@@ -120,18 +179,72 @@ void setup() {
   myPID.SetTunings(Kp, Ki, Kd);
   myPID.SetMode(AUTOMATIC);
   myPID.SetOutputLimits(minServoAngle, maxServoAngle);
+
+
 }
 
 void loop() {
 
+  if (millis() - prevMillis > LED_delay) {
+    digitalWrite(LED_STATUS, !digitalRead(LED_STATUS));
+
+    prevMillis = millis();
+  }
 
 
   unsigned long now = millis();
 
   if (now - lastServoUpdate >= servoUpdateInterval) {
+
     lastServoUpdate = now;
-Serial.println(millis());
     currentTemp = readTemperatureDallas();
+
+    //nrf24
+  
+    data.temp1 = sensors.getTempCByIndex(0);
+    data.temp2 = sensors.getTempCByIndex(1);
+    data.temp3 = sensors.getTempCByIndex(2);
+
+    Serial.print("Sending data...");
+  if (role) {
+    // This device is a TX node
+payload = data.temp2;
+    unsigned long start_timer = micros();                // start the timer
+    bool report = radio.write(&data, sizeof(data));  // transmit & save the report
+    unsigned long end_timer = micros();                  // end the timer
+
+    if (report) {
+      Serial.print(F("Transmission successful! "));  // payload was delivered
+      Serial.print(F("Time to transmit = "));
+      Serial.print(end_timer - start_timer);  // print the timer result
+      Serial.print(F(" us. Sent: "));
+      Serial.println(payload);  // print payload sent
+      payload += 0.01;          // increment float payload
+      LED_delay = 1500;
+    } else {
+LED_delay = 300;
+      Serial.println(F("Transmission failed or timed out"));  // payload was not delivered
+    }
+
+    // to make this example readable in the serial monitor
+    
+
+  } else {
+    // This device is a RX node
+
+    uint8_t pipe;
+    if (radio.available(&pipe)) {              // is there a payload? get the pipe number that received it
+      uint8_t bytes = radio.getPayloadSize();  // get the size of the payload
+      radio.read(&payload, bytes);             // fetch payload from FIFO
+      Serial.print(F("Received "));
+      Serial.print(bytes);  // print the size of the payload
+      Serial.print(F(" bytes on pipe "));
+      Serial.print(pipe);  // print the pipe number
+      Serial.print(F(": "));
+      Serial.println(payload);  // print the payload's value
+    }
+  }  // role
+
 
     if (currentTemp > -55 && currentTemp < 125) {  // Valid DS18B20 range
       inputTemp = currentTemp;
@@ -142,6 +255,7 @@ Serial.println(millis());
 
       if (isWithinLimits(newServoPos)) {
         if (abs(newServoPos - lastServoPos) > 1) {
+
           if (!servoAttached) {
             valveServo.attach(SERVO_PIN);
             servoAttached = true;
@@ -293,13 +407,13 @@ void showMainScreen() {
     lcd.print("C");
 
     lcd.setCursor(0, 0);
-  unsigned long ms = millis();
-  unsigned long totalSeconds = ms / 1000;
+    unsigned long ms = millis();
+    unsigned long totalSeconds = ms / 1000;
 
-  unsigned int seconds = totalSeconds % 60;
-  unsigned int minutes = (totalSeconds / 60) % 60;
-  unsigned int hours = (totalSeconds / 3600) % 24;
-  unsigned int days = totalSeconds / 86400;
+    unsigned int seconds = totalSeconds % 60;
+    unsigned int minutes = (totalSeconds / 60) % 60;
+    unsigned int hours = (totalSeconds / 3600) % 24;
+    unsigned int days = totalSeconds / 86400;
     lcd.print("d");
     lcd.setCursor(1, 0);
     lcd.print(days);
@@ -311,7 +425,7 @@ void showMainScreen() {
     lcd.print("m:");
     lcd.setCursor(10, 0);
     lcd.print(minutes);
-        lcd.setCursor(12, 0);
+    lcd.setCursor(12, 0);
     lcd.print("s:");
     lcd.setCursor(14, 0);
     lcd.print(seconds);
@@ -344,8 +458,8 @@ void adjustValue(int index, int step) {
 }
 
 float readTemperatureDallas() {
-  sensors.requestTemperatures();  // Send the command to get temperatures
-  float tempC = sensors.getTempCByIndex(0);
+  sensors.requestTemperatures();             // Send the command to get temperatures
+  float tempC = sensors.getTempCByIndex(1);  // sensor with index should be valve sensor
 
   return tempC;
 }
@@ -369,4 +483,13 @@ bool isWithinLimits(int position) {
   if (digitalRead(MIN_LIMIT_SWITCH) == HIGH && position <= minServoAngle) return false;
   if (digitalRead(MAX_LIMIT_SWITCH) == HIGH && position >= maxServoAngle) return false;
   return true;
+}
+
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress) {
+  for (uint8_t i = 0; i < 8; i++) {
+    // zero pad the address if necessary
+    if (deviceAddress[i] < 16) Serial.print("0");
+    Serial.print(deviceAddress[i], HEX);
+  }
 }
